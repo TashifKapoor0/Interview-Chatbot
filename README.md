@@ -77,3 +77,12 @@ Dive into a focused question-and-answer experience with this intelligent chatbot
 * To end the session and save the chat history (if configured), type `end`, `exit`, or `bye`.
 
 ## 📂 Project Structure
+
+.
+├── .gitignore
+├── .env           (Your private configurations - keep safe!)
+├── main.py        (The FastAPI backend logic)
+├── index.html     (The interactive frontend UI)
+├── requirements.txt (Python package dependencies)
+└── venv/          (Your isolated Python environment)
+└── README.md      (This informative file!)
