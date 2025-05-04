@@ -1,7 +1,9 @@
-streamlit
+fastapi
+uvicorn
+python-dotenv
 openai
 azure-search-documents
 azure-core
 azure-cosmos
-python-dotenv
-uuid
+jinja2
+python-multipart
