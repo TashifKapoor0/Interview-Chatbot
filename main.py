@@ -1,51 +1,48 @@
 import uuid
-import os
 import json
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse  # Import JSONResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
+import streamlit as st
 from openai import AzureOpenAI
 from azure.search.documents import SearchClient
 from azure.search.documents.models import VectorizedQuery
 from azure.core.credentials import AzureKeyCredential
 from azure.cosmos import CosmosClient, PartitionKey
+import os
+from dotenv import load_dotenv
 
-# Load environment
+# -------------------- LOAD ENV --------------------
 load_dotenv()
 
-# Azure OpenAI
+# -------------------- ENV CONFIGURATION --------------------
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
 AZURE_OPENAI_CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT")
 
-# Azure Search
 AZURE_SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
 AZURE_SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
 AZURE_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX")
 AZURE_SEARCH_VECTOR_FIELD = os.getenv("AZURE_SEARCH_VECTOR_FIELD")
 AZURE_SEARCH_CONTENT_FIELD = os.getenv("AZURE_SEARCH_CONTENT_FIELD")
 
-# Cosmos DB
 COSMOS_ENDPOINT = os.getenv("COSMOS_ENDPOINT")
 COSMOS_KEY = os.getenv("COSMOS_KEY")
 COSMOS_DB_NAME = os.getenv("COSMOS_DB_NAME")
 COSMOS_CONTAINER_NAME = os.getenv("COSMOS_CONTAINER_NAME")
 COSMOS_PARTITION_KEY = os.getenv("COSMOS_PARTITION_KEY")
 
-# Clients
+# -------------------- CLIENT INITIALIZATION --------------------
 openai_client = AzureOpenAI(
     api_key=AZURE_OPENAI_KEY,
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
     api_version="2025-03-01-preview"
 )
+
 search_client = SearchClient(
     endpoint=AZURE_SEARCH_ENDPOINT,
     index_name=AZURE_SEARCH_INDEX,
     credential=AzureKeyCredential(AZURE_SEARCH_KEY)
 )
+
 cosmos_client = CosmosClient(COSMOS_ENDPOINT, COSMOS_KEY)
 db = cosmos_client.create_database_if_not_exists(id=COSMOS_DB_NAME)
 container = db.create_container_if_not_exists(
@@ -53,17 +50,14 @@ container = db.create_container_if_not_exists(
     partition_key=PartitionKey(path=COSMOS_PARTITION_KEY)
 )
 
-# FastAPI setup
-app = FastAPI()
-templates = Jinja2Templates(directory=".")
-session_memory = {}
-
+# -------------------- SYSTEM RULES --------------------
 SYSTEM_PROMPT = (
     "You are a strict Q&A bot. You must only respond with answers that are exactly as stored "
     "in the dataset. Do not paraphrase, summarize, or generate new content. If no matching answer "
     "is found, say 'No matching answer found in the dataset.'"
 )
 
+# -------------------- FUNCTIONS --------------------
 def get_embedding(text):
     response = openai_client.embeddings.create(
         input=[text],
@@ -87,12 +81,13 @@ def search_azure_index(query):
 def ask_chatbot(query, passages):
     if not passages:
         return "No matching answer found in the dataset."
-    context = "\n\n".join(passages)
+
+    full_context = "\n\n".join(passages)
     response = openai_client.chat.completions.create(
         model=AZURE_OPENAI_CHAT_DEPLOYMENT,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Query: {query}\n\nRelevant Data:\n{context}"}
+            {"role": "user", "content": f"Query: {query}\n\nRelevant Data:\n{full_context}"}
         ],
         temperature=0
     )
@@ -105,29 +100,39 @@ def save_to_cosmos(session_id, history):
         "conversation": history
     })
 
-@app.get("/", response_class=HTMLResponse)
-async def get_home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "history": []})
+# -------------------- STREAMLIT CHATBOT --------------------
+def chatbot_ui():
+    st.set_page_config(page_title="AI Q&A Chatbot", layout="centered")
+    st.title("🤖 AI Q&A Chatbot")
+    st.markdown("Ask any question. The chatbot will only respond with answers from the dataset.")
 
-@app.post("/chat")
-async def chat(request: Request, user_input: str = Form(...)):
-    session_id = request.cookies.get("session_id", str(uuid.uuid4()))
-    history = session_memory.get(session_id, [])
+    # ------------------ SESSION STATE SETUP ------------------
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.chat_history = []
+        st.session_state.ended = False
 
-    user_message = {"user": user_input}
-    history.append(user_message)
+    # ------------------ CHAT DISPLAY ------------------
+    for entry in st.session_state.chat_history:
+        st.markdown(f"**You:** {entry['user']}")
+        st.markdown(f"**Bot:** {entry['bot']}")
 
-    if user_input.lower().strip() in ["exit", "end", "bye"]:
-        save_to_cosmos(session_id, history)
-        session_memory.pop(session_id, None)
-        bot_reply = {"bot": "✅ Session ended and saved to Cosmos DB."}
-        history.append(bot_reply)
-        return JSONResponse({"history": history, "ended": True})  # Return JSON with ended flag
+    # ------------------ CHAT INPUT ------------------
+    if not st.session_state.ended:
+        with st.form(key="chat_form", clear_on_submit=True):
+            user_input = st.text_input("Type your question:", "")
+            submit_button = st.form_submit_button("Send")
 
-    passages = search_azure_index(user_input)
-    bot_reply_text = ask_chatbot(user_input, passages)
-    bot_reply = {"bot": bot_reply_text}
-    history.append(bot_reply)
-    session_memory[session_id] = history
+        if submit_button and user_input.strip():
+            if user_input.lower().strip() in ["exit", "quit", "end"]:
+                st.session_state.ended = True
+                save_to_cosmos(st.session_state.session_id, st.session_state.chat_history)
+                st.success("✅ Thank you for using the chatbot. Session ended.")
+            else:
+                results = search_azure_index(user_input)
+                bot_response = ask_chatbot(user_input, results)
+                st.session_state.chat_history.append({"user": user_input, "bot": bot_response})
+                st.rerun()
 
-    return JSONResponse({"history": history})  # Return JSON with updated history
+if __name__ == "__main__":
+    chatbot_ui()
