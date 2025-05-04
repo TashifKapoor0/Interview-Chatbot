@@ -1,26 +1,58 @@
-# Python
+# Python-specific ignores
 __pycache__/
-*.py[cod]
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-
-# Virtual environment
-.env
-venv/
-.venv/
-ENV/
+*.pyc
+*.pyo
+*.pyd
+.python-version
 env/
-.Python
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info
+.pytest_cache/
+.coverage
+*.log
 
-# Streamlit
-.streamlit/secrets.toml
-
-# VS Code settings
+# Editor-specific ignores
+.idea/
 .vscode/
+*.swp
+*.swo
+*.vim
+*.DS_Store
 
-# OS files
-.DS_Store
+# OS-specific ignores
 Thumbs.db
+
+# Package/dependency management
+requirements.txt  # Generally you *don't* ignore this
+# If you have a specific packages directory that shouldn't be tracked
+# packages/
+
+# Build artifacts
+build/
+dist/
+
+# Logs and temp files
+*.log
+tmp/
+temp/
+__pyinstaller/
+
+# Jupyter Notebook related (if applicable)
+.ipynb_checkpoints/
+
+# Environment variables (if you have a separate file not named .env)
+# my_environment_variables.env
+
+# Database files (if you don't want to track them)
+# *.sqlite
+# *.db
+
+# Compiled C/C++ extensions (if any)
+*.so
+*.dylib
+
+# Optional: Ignore your .env file if it contains sensitive information
+.env
